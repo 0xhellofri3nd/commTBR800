@@ -50,7 +50,7 @@ String leStringSerial(){
         //Serial.print(conteudo[41]);  
         //Serial.print("");
     
-        // Binary Output
+        // Binary Input
         String bin1 = conteudo.substring( 37, 40 );
         String bin2 = conteudo.substring( 40, 43 );
         Serial.print( bin1.toInt(), HEX );
