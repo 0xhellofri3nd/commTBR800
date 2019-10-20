@@ -1,0 +1,156 @@
+V ref = 105 = 69
+Ins = 3.5
+Temp = 25
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17  
+            01 01 69 00 00 2f 68                             
+
+V ref = 105 = 69
+Ins = 3.5
+Temp = 15
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17
+            01 03 0f 00 00 f2 99           
+
+V ref = 105 = 69
+Ins = 3.5
+Temp = 30
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17 
+            01 03 1e 00 00 b3 56               
+
+V ref = 120 = 78
+Ins = 3.5
+Temp = 45 = 2d
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17   
+            01 01 78 00 00 6e a7            
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17  
+            01 03 2d 00 00 09 4a                   
+
+V ref = 120 = 78
+Ins = 4.5
+Temp = 45 = 2d
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17  
+            01 02 2d 00 00 e1 88                         
+
+V ref = 120 = 78
+Ins = 5.5
+Temp = 45 = 2d
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17  
+            01 02 37 00 00 a8 a0              
+
+Valores mudam 2 em dois
+
+V ref = 120 = 78
+Ins = 5.5
+Temp = 45 = 2d
+BlockMax = 5 %
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17  
+            01 0d 08 00 00 77 34              
+
+V ref = 120 = 78
+Ins = 5.5
+Temp = 45 = 2d
+BlockMax = 6 1/4 %
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17   
+            01 0d 0a 00 00 07 07                            
+
+V ref = 120 = 78
+Ins = 5.5
+Temp = 45 = 2d
+BlockMax = 71/2 %
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17  
+            01 0d 0c 00 00 97 52                           
+
+V ref = 120 = 78
+Ins = 5.5
+Temp = 45 = 2d
+BlockMax = 83/4 %
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17 
+            01 0d 0e 00 00 e7 61                         
+
+V ref = 120 = 78
+Ins = 5.5
+Temp = 45 = 2d
+BlockMax = 10 %
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17 
+            01 0d 10 00 00 4e 2f                          
+  
+
+V ref = 120 = 78
+Ins = 5.5
+Temp = 45 = 2d
+BlockMax = 10 %
+Rel TP = 110.0 - LSB 4c MSB 04
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17   
+            01 0f 4c 04 00 9b 21                             
+
+V ref = 120 = 78
+Ins = 5.5
+Temp = 45 = 2d
+BlockMax = 10 %
+Rel TC = 1500 - LSB 05 MSB dc
+
+            05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17  
+            01 10 dc 05 00 e9 8d                           
+
+
+Estrutura BÁSICA do PACOTE
+    05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17 (END) (VELOR) 0x00, 0x00, 0x09, 0x4a
+
+    Endereços:
+        
+        Fluxo NORMAL
+                01 01 - Tensão REF  :  VALOR: 100 à 130
+                01 02 - Insensibilidade (%)  :  VALOR: 1.0 à 6.0
+                01 03 - Temporização(s) : VALOR: 10 à 120
+                        01 00  - Modo de Temporização   
+                                Linear - VALOR: 84 
+                                Inverso - VALOR: 86
+                01 04 - UR  : VALOR: 25 à -25 (Verificar como colocar numero negativo) 
+                01 05 - UX  : VALOR: 25 à -25 
+        
+        Fluxo INVERSO
+                01 06 - UR                              VALOR: 25 à -25 
+                01 07 -  UX                            VALOR: 25 à -25 
+                01 08 - Tensão REF             VALOR: 100 à 130
+                01 09 - Insensibilidade (%)  VALOR: 1.0 à 6.0
+                01 0a - Temporização(s)           VALOR: 10 à 120
+                        01 00  - Modo de Temporização   
+                                Linear - VALOR: 84
+                                Inverso - VALOR: 87
+
+        Limitador de Tensão
+                01 0b -  Limitador de tensão MAX (VMA) 
+                        Valores de 120 à 135 (Desl = 00)
+        
+                01 0c - Limitador de tensão MIN (VMI) 
+                        Valores de 105 à 118 (Desl = 00)
+        
+        Bloqueio       
+                01 0d - Bloq. MAX:
+                                5%          - VALOR: 08
+                                6 1/4%    - VALOR: 0a
+                                7 1/2%    - VALOR: 0c
+                                8 3/4%   - VALOR: 0e
+                                10%        - VALOR: 10
+                01 0e - Bloq. MIN:
+                                5%          - VALOR: 08
+                                6 1/4%    - VALOR: 0a
+                                7 1/2%    - VALOR: 0c
+                                8 3/4%   - VALOR: 0e
+                                10%        - VALOR: 10
+        
+        Relação TC/TP 
+                01 0f - TP (2 bytes - LSB/MSB) 1700 = 6A4 - (A4 LSB / 06 MSB)
+                01 10 - TC (2 bytes - LSB/MSB) 4269 = 10AD - (AD LSB / 10 MSB)
