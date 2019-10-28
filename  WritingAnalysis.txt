@@ -106,7 +106,7 @@ Rel TC = 1500 - LSB 05 MSB dc
 
 
 Estrutura BÁSICA do PACOTE
-    05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17 (END) (VELOR) 0x00, 0x00, 0x09, 0x4a
+    05 64 10 c4 03 00 01 00 26 97 c0 c0 05 29 02 17 (END) (VALOR) 0x00, 0x00, 0x09, 0x4a
 
     Endereços:
         
