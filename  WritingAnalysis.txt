@@ -152,5 +152,8 @@ Estrutura BÁSICA do PACOTE
                                 10%        - VALOR: 10
         
         Relação TC/TP 
-                01 0f - TP (2 bytes - LSB/MSB) 1700 = 6A4 - (A4 LSB / 06 MSB)
-                01 10 - TC (2 bytes - LSB/MSB) 4269 = 10AD - (AD LSB / 10 MSB)
+                01 0f - TP(RLV)  - Valor: 25.0 - 209.0 (passo 0.1)
+                        (2 bytes - LSB/MSB) 1700 = 6A4 - (A4 LSB / 06 MSB) 
+                
+                01 10 - TC(RLI) - Valor: 250 - 6000 (passo 1)
+                        (2 bytes - LSB/MSB) 4269 = 10AD - (AD LSB / 10 MSB)
