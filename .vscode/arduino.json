@@ -2,5 +2,5 @@
     "programmer": "AVRISP mkII",
     "board": "arduino:avr:uno",
     "port": "/dev/ttyUSB0",
-    "sketch": "receptionApp/receptionApp.ino"
+    "sketch": "receptionApp/sendApp/sendApp.ino"
 }
