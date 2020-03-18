@@ -1,15 +1,16 @@
-#include <MsTimer2.h>
-#include <AltSoftSerial.h>
 #include <SoftwareSerial.h>
+#include <AltSoftSerial.h>
+#include <MsTimer2.h>
+#include <Crc16.h>
 #include <stdio.h>
 
 #define ledstat 4
 
 byte sb;
 byte pkgRead[400];
-byte pkgWrite[] = {0x05, 0x64, 0x0b, 0xc4, 0x01, 0x00, 0x01, 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50};
-
-int index, tempopisca, tempoenvio = 0;
+byte basePKG[] = {0x05, 0x64, 0x0b, 0xc4, 0x01, 0x00, 0x01, 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50};
+byte pkgWrite[13]; 
+int index, tempopisca, tempoenvio, hack = 0;
 
 String Sigfox, msgGSM, pkgToSend, numHex0, numHex1, numHex2, numHex3, numHex4, numHex5,
     numHex6, numHex7, numHex8, numHex9, numHex10, numHex11, var1, var2, var3, valuesToChange = "";
@@ -19,6 +20,7 @@ bool lersigfox, enviaGSM = false;
 
 AltSoftSerial sigfoxSerial;
 SoftwareSerial gsmSerial(11, 10);
+Crc16 crc;
 
 void setup(){
     Serial.begin(9600);
@@ -51,6 +53,7 @@ void setup(){
     delay(2000);
 
     initpack = true;
+    
 }
 
 // Convert data to 16-bit integer
@@ -231,14 +234,17 @@ void receivedMSG(){
 }
 
 void changeParameters(String valuesToChange){
-    int address, valueMSB, valueLSB = 0;
-    byte pkgWrite[] = {5, 100, 16, 196, 1, 0, 1, 0, 143, 95, 192, 192, 5, 41, 2, 23, 1, address, valueMSB, valueLSB, 0, 191, 61};
-
+    
+    int address, valueMSB, valueLSB, lsbCRC, msbCRC = 0;
+    unsigned short crcValue;
+    
+    byte basePkgToWrite[23] = {5, 100, 16, 196, 1, 0, 1, 0, 143, 95, 192, 192, 5, 41, 2, 23, 1, address, valueMSB, valueLSB, 0};
+    
     // Pacote de escrita para endereço 03
     // {5, 100, 16, 196, 1, 0, 1, 0, 38, 151, 192 ,192, 5, 41, 2, 23, 1, address, valueMSB, valueLSB, 0 ,47, 104 };
-
-    String lsbRLV, msbRLV, lsbRLI, msbRLI, tempRLV, tempRLI, forTest, strRLV, strRLI = "";
-
+   
+    String lsbRLV, msbRLV, lsbRLI, msbRLI, tempRLV, tempRLI, forTest, strRLV, strRLI, tmpHexCRC = "";
+    
     String vRef = getValue(valuesToChange, 'F', 0);
     String insensitivity = getValue(valuesToChange, 'F', 1);
     String bloqTapMax = getValue(valuesToChange, 'F', 2);
@@ -248,42 +254,161 @@ void changeParameters(String valuesToChange){
     String RLI = getValue(valuesToChange, 'F', 6); //  relationship TC
 
     // Change reference voltage
-    pkgWrite[17] = 1;
-    pkgWrite[18] = vRef.toInt();
-    pkgWrite[19] = 0;
-    Serial.write(pkgWrite, sizeof(pkgWrite));
+    basePkgToWrite[17] = 1;
+    basePkgToWrite[18] = vRef.toInt();
+    basePkgToWrite[19] = 0;
+
+    // separates only the data needed to calculate the CRC
+    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
+        for (int x = hack; x <= 10; x++){
+            pkgWrite[x] = basePkgToWrite[i];
+            hack++;
+            x = 11;
+        }
+    }
+
+    // Calculate CRC
+    crcValue = crc.DNP3(pkgWrite, 0, 11);
+
+    tmpHexCRC = decToHex(crcValue, 4);
+    lsbCRC         = hexToDec(tmpHexCRC.substring(2));
+    msbCRC       = hexToDec(tmpHexCRC.substring(0, 2));
+
+    // add CRC to basePkgToWrite
+    basePkgToWrite[21] = lsbCRC;
+    basePkgToWrite[22] = msbCRC;
+
+    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+
+    lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
+    tmpHexCRC = "";
 
     delay(800);
 
     // Change insensitivity
-    pkgWrite[17] = 2;
-    pkgWrite[18] = insensitivity.toInt();
-    pkgWrite[19] = 0;
-    Serial.write(pkgWrite, sizeof(pkgWrite));
+    basePkgToWrite[17] = 2;
+    basePkgToWrite[18] = insensitivity.toInt();
+    basePkgToWrite[19] = 0;
+
+    // separates only the data needed to calculate the CRC
+    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
+        for (int x = hack; x <= 10; x++){
+            pkgWrite[x] = basePkgToWrite[i];
+            hack++;
+            x = 11;
+        }
+    }
+    // Calculate CRC
+    crcValue = crc.DNP3(pkgWrite, 0, 11);
+
+    tmpHexCRC = decToHex(crcValue, 4);
+    lsbCRC         = hexToDec(tmpHexCRC.substring(2));
+    msbCRC       = hexToDec(tmpHexCRC.substring(0, 2));
+
+    // add CRC to basePkgToWrite
+    basePkgToWrite[21] = lsbCRC;
+    basePkgToWrite[22] = msbCRC;
+
+    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+
+    lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
+    tmpHexCRC = "";
 
     delay(800);
 
     // Change bloqTapMax
-    pkgWrite[17] = 13;
-    pkgWrite[18] = bloqTapMax.toInt();
-    pkgWrite[19] = 0;
-    Serial.write(pkgWrite, sizeof(pkgWrite));
+    basePkgToWrite[17] = 13;
+    basePkgToWrite[18] = bloqTapMax.toInt();
+    basePkgToWrite[19] = 0;
+
+    // separates only the data needed to calculate the CRC
+    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
+        for (int x = hack; x <= 10; x++){
+            pkgWrite[x] = basePkgToWrite[i];
+            hack++;
+            x = 11;
+        }
+    }
+
+    // Calculate CRC
+    crcValue = crc.DNP3(pkgWrite, 0, 11);
+
+    tmpHexCRC = decToHex(crcValue, 4);
+    lsbCRC         = hexToDec(tmpHexCRC.substring(2));
+    msbCRC       = hexToDec(tmpHexCRC.substring(0, 2));
+
+    // add CRC to basePkgToWrite
+    basePkgToWrite[21] = lsbCRC;
+    basePkgToWrite[22] = msbCRC;
+
+    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+
+    lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
+    tmpHexCRC = "";
 
     delay(800);
 
     // Change bloqTapMin
-    pkgWrite[17] = 14;
-    pkgWrite[18] = bloqTapMin.toInt();
-    pkgWrite[19] = 0;
-    Serial.write(pkgWrite, sizeof(pkgWrite));
+    basePkgToWrite[17] = 14;
+    basePkgToWrite[18] = bloqTapMin.toInt();
+    basePkgToWrite[19] = 0;
+
+    // separates only the data needed to calculate the CRC
+    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
+        for (int x = hack; x <= 10; x++){
+            pkgWrite[x] = basePkgToWrite[i];
+            hack++;
+            x = 11;
+        }
+    }
+
+    // Calculate CRC
+    crcValue = crc.DNP3(pkgWrite, 0, 11);
+
+    tmpHexCRC = decToHex(crcValue, 4);
+    lsbCRC         = hexToDec(tmpHexCRC.substring(2));
+    msbCRC       = hexToDec(tmpHexCRC.substring(0, 2));
+
+    // add CRC to basePkgToWrite
+    basePkgToWrite[21] = lsbCRC;
+    basePkgToWrite[22] = msbCRC;
+
+    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+
+    lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
+    tmpHexCRC = "";
 
     delay(800);
 
     //  timer change
-    pkgWrite[17] = 3;
-    pkgWrite[18] = timer.toInt();
-    pkgWrite[19] = 0;
-    Serial.write(pkgWrite, sizeof(pkgWrite));
+    basePkgToWrite[17] = 3;
+    basePkgToWrite[18] = timer.toInt();
+    basePkgToWrite[19] = 0;
+
+    // separates only the data needed to calculate the CRC
+    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
+        for (int x = hack; x <= 10; x++){
+            pkgWrite[x] = basePkgToWrite[i];
+            hack++;
+            x = 11;
+        }
+    }
+
+    // Calculate CRC
+    crcValue = crc.DNP3(pkgWrite, 0, 11);
+
+    tmpHexCRC = decToHex(crcValue, 4);
+    lsbCRC         = hexToDec(tmpHexCRC.substring(2));
+    msbCRC       = hexToDec(tmpHexCRC.substring(0, 2));
+
+    // add CRC to basePkgToWrite
+    basePkgToWrite[21] = lsbCRC;
+    basePkgToWrite[22] = msbCRC;
+
+    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+
+    lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
+    tmpHexCRC = "";
 
     delay(800);
 
@@ -316,10 +441,34 @@ void changeParameters(String valuesToChange){
         converted_lsbRLV = 0;
     }
 
-    pkgWrite[17] = 15;
-    pkgWrite[18] = converted_msbRLV;
-    pkgWrite[19] = converted_lsbRLV;
-    Serial.write(pkgWrite, sizeof(pkgWrite));
+    basePkgToWrite[17] = 15;
+    basePkgToWrite[18] = converted_msbRLV;
+    basePkgToWrite[19] = converted_lsbRLV;
+   
+    // separates only the data needed to calculate the CRC
+    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
+        for (int x = hack; x <= 10; x++){
+            pkgWrite[x] = basePkgToWrite[i];
+            hack++;
+            x = 11;
+        }
+    }
+
+    // Calculate CRC
+    crcValue = crc.DNP3(pkgWrite, 0, 11);
+
+    tmpHexCRC = decToHex(crcValue, 4);
+    lsbCRC         = hexToDec(tmpHexCRC.substring(2));
+    msbCRC       = hexToDec(tmpHexCRC.substring(0, 2));
+
+    // add CRC to basePkgToWrite
+    basePkgToWrite[21] = lsbCRC;
+    basePkgToWrite[22] = msbCRC;
+
+    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+
+    lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
+    tmpHexCRC = "";
 
     delay(800);
 
@@ -352,10 +501,34 @@ void changeParameters(String valuesToChange){
         converted_lsbRLI = 0;
     }
 
-    pkgWrite[17] = 16;
-    pkgWrite[18] = converted_msbRLI;
-    pkgWrite[19] = converted_lsbRLI;
-    Serial.write(pkgWrite, sizeof(pkgWrite));
+    basePkgToWrite[17] = 16;
+    basePkgToWrite[18] = converted_msbRLI;
+    basePkgToWrite[19] = converted_lsbRLI;
+
+     // separates only the data needed to calculate the CRC
+    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
+        for (int x = hack; x <= 10; x++){
+            pkgWrite[x] = basePkgToWrite[i];
+            hack++;
+            x = 11;
+        }
+    }
+
+    // Calculate CRC
+    crcValue = crc.DNP3(pkgWrite, 0, 11);
+
+    tmpHexCRC = decToHex(crcValue, 4);
+    lsbCRC         = hexToDec(tmpHexCRC.substring(2));
+    msbCRC       = hexToDec(tmpHexCRC.substring(0, 2));
+
+    // add CRC to basePkgToWrite
+    basePkgToWrite[21] = lsbCRC;
+    basePkgToWrite[22] = msbCRC;
+
+    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+
+    lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
+    tmpHexCRC = "";
 
     delay(800);
 
@@ -366,7 +539,7 @@ void changeParameters(String valuesToChange){
     gsmSerial.write(26);
     delay(300);
 
-    digitalWrite(ledstat, LOW);
+    digitalWrite(ledstat, false);
 }
 
 String getValue(String data, char separator, int index){
@@ -401,12 +574,20 @@ unsigned int hexToDec(String hexString){
     return decValue;
 }
 
+String decToHex(long decValue, byte desiredStringLength) {
+  
+  String hexString = String(decValue, HEX);
+  while (hexString.length() < desiredStringLength) hexString = "0" + hexString;
+
+  return hexString;
+}
+
 void loop(){
 
     if ( (lersigfox == true) && (enviaGSM == false)  ){
         index = 0;
         Serial.println("Sending...");
-        Serial.write(pkgWrite, sizeof(pkgWrite));
+        Serial.write(basePKG, sizeof(basePKG));
         tempoenvio = 0;
         lersigfox = false;
     }
@@ -414,7 +595,7 @@ void loop(){
         receivedMSG();
     }
     if ( (enviaGSM == true) && (lersigfox == false) ){
-        digitalWrite(ledstat, HIGH);
+        digitalWrite(ledstat, true);
         changeParameters(valuesToChange);
         enviaGSM = false;
         valuesToChange = "";
