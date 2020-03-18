@@ -1,26 +1,32 @@
-#include <SoftwareSerial.h>
-#include <AltSoftSerial.h>
-#include <MsTimer2.h>
-#include <Crc16.h>
 #include <stdio.h>
+#include <Crc16.h>
+#include <MsTimer2.h>
+#include <AltSoftSerial.h>
+#include <SoftwareSerial.h>
 
 #define ledstat 4
 
 byte sb;
+byte pkgWrite[13];
 byte pkgRead[400];
-byte basePKG[] = {0x05, 0x64, 0x0b, 0xc4, 0x01, 0x00, 0x01, 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50};
-byte pkgWrite[13]; 
+byte basePKG[] = { 0x05, 0x64, 0x0b, 
+                                 0xc4, 0x01, 0x00, 0x01, 
+                                 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 
+                                 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50 };
+
+
 int index, tempopisca, tempoenvio, hack = 0;
 
-String Sigfox, msgGSM, pkgToSend, numHex0, numHex1, numHex2, numHex3, numHex4, numHex5,
-    numHex6, numHex7, numHex8, numHex9, numHex10, numHex11, var1, var2, var3, valuesToChange = "";
+String Sigfox, msgGSM, pkgToSend, numHex0, numHex1, numHex2,
+           numHex3, numHex4, numHex5, numHex6, numHex7, numHex8, 
+           numHex9, numHex10, numHex11, var1, var2, var3, valuesToChange = "";
 
 bool initpack = false;
 bool lersigfox, enviaGSM = false;
 
-AltSoftSerial sigfoxSerial;
-SoftwareSerial gsmSerial(11, 10);
 Crc16 crc;
+AltSoftSerial sigfoxSerial;
+SoftwareSerial gsmSerial( 11, 10 );
 
 void setup(){
     Serial.begin(9600);
@@ -30,7 +36,6 @@ void setup(){
     pinMode(ledstat, OUTPUT);
     sigfoxSerial.begin(9600);
     gsmSerial.begin(4800);
-    
 
     sigfoxSerial.println("AT");
     delay(100);
@@ -52,13 +57,12 @@ void setup(){
     updateSerial();
     delay(2000);
 
-    initpack = true;
-    
+    initpack = true;  
 }
 
 // Convert data to 16-bit integer
-int convert16bits(char msb, char lsb){
-    int convertData = (int(msb * 256) + (int(lsb)));
+int convert16bits( char msb, char lsb ){
+    int convertData = ( int(msb * 256) + (int(lsb)) );
     return convertData;
 }
 
