@@ -15,11 +15,11 @@ byte basePKG[] = { 0x05, 0x64, 0x0b,
                                  0x01, 0x3c, 0x01, 0x06, 0xff, 0x50 };
 
 
-int index, tempopisca, tempoenvio, hack = 0;
+int index, tempopisca, tempoenvio,timeoutGSM, recGSM, hack = 0;
 
-String Sigfox, msgGSM, pkgToSend, numHex0, numHex1, numHex2,
+String Sigfox,pkgToSend, numHex0, numHex1, numHex2,
            numHex3, numHex4, numHex5, numHex6, numHex7, numHex8, 
-           numHex9, numHex10, numHex11, var1, var2, var3, valuesToChange = "";
+           numHex9, numHex10, numHex11, var1, var2, var3, valuesToChange, msgGSM = "";
 
 bool initpack = false;
 bool lersigfox, enviaGSM = false;
@@ -35,29 +35,25 @@ void setup(){
 
     pinMode(ledstat, OUTPUT);
     sigfoxSerial.begin(9600);
-    gsmSerial.begin(4800);
+    gsmSerial.begin(9600);
 
+    // initialize Sigfox
     sigfoxSerial.println("AT");
     delay(100);
     sigfoxSerial.println("AT$RC");
-    Sigfox = "AT$SF=hello";
+    Sigfox = "AT$SF=255255";
     delay(100);
     sigfoxSerial.println(Sigfox);
     delay(100);
 
-    Serial.println("Initializing...");
+    // time to initialize GSM
     delay(5000);
-    gsmSerial.println("AT+CREG?"); //Once the handshake test is successful, it will back to OK
-    updateSerial();
-    delay(2000);
     gsmSerial.println("AT+CMGF=1"); // Configuring TEXT mode
-    updateSerial();
     delay(2000);
     gsmSerial.println("AT+CNMI=2,2,0,0,0"); // Decides how newly arrived SMS messages should be handled
-    updateSerial();
     delay(2000);
 
-    initpack = true;  
+    initpack = true;
 }
 
 // Convert data to 16-bit integer
@@ -83,6 +79,7 @@ void serialEvent(){
 void requestData(){
     ++tempoenvio;
     ++tempopisca;
+    ++timeoutGSM;
     if ( (tempoenvio == 420) || (initpack == true) ){
         lersigfox = true;
         initpack = false;
@@ -205,7 +202,6 @@ void convertVariables(){
 }
 
 void updateSerial(){
-    delay(500);
     while (Serial.available()){
         gsmSerial.write(Serial.read());
     }
@@ -216,25 +212,9 @@ void updateSerial(){
 }
 
 void receivedMSG(){
-    delay(500);
-    String comp = "";
-
-    if ( gsmSerial.available() > 0 ){
-        String msgGSM = "";
-
-        while ( gsmSerial.available() > 0 ){
-            char letra = gsmSerial.read();
-            if ( isAlphaNumeric(letra) ){
-                msgGSM += letra;
-            }
-        }
-
-        if ( msgGSM[29] == 'R' ){
-            // Remove o numero de quem esta eviando
-            valuesToChange = msgGSM.substring(30);
-            enviaGSM = true;
-        }
-    }
+    msgGSM = gsmSerial.readString();
+    recGSM = 1;
+    timeoutGSM = 0;
 }
 
 void changeParameters(String valuesToChange){
@@ -243,9 +223,6 @@ void changeParameters(String valuesToChange){
     unsigned short crcValue;
     
     byte basePkgToWrite[23] = {5, 100, 16, 196, 1, 0, 1, 0, 143, 95, 192, 192, 5, 41, 2, 23, 1, address, valueMSB, valueLSB, 0};
-    
-    // Pacote de escrita para endereço 03
-    // {5, 100, 16, 196, 1, 0, 1, 0, 38, 151, 192 ,192, 5, 41, 2, 23, 1, address, valueMSB, valueLSB, 0 ,47, 104 };
    
     String lsbRLV, msbRLV, lsbRLI, msbRLI, tempRLV, tempRLI, forTest, strRLV, strRLI, tmpHexCRC = "";
     
@@ -287,6 +264,10 @@ void changeParameters(String valuesToChange){
     lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
     tmpHexCRC = "";
 
+    digitalWrite(ledstat, true);
+    delay(500);
+    digitalWrite(ledstat, false);
+
     delay(800);
 
     // Change insensitivity
@@ -317,6 +298,10 @@ void changeParameters(String valuesToChange){
 
     lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
     tmpHexCRC = "";
+
+    digitalWrite(ledstat, true);
+    delay(500);
+    digitalWrite(ledstat, false);
 
     delay(800);
 
@@ -350,6 +335,10 @@ void changeParameters(String valuesToChange){
     lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
     tmpHexCRC = "";
 
+    digitalWrite(ledstat, true);
+    delay(500);
+    digitalWrite(ledstat, false);
+
     delay(800);
 
     // Change bloqTapMin
@@ -382,6 +371,10 @@ void changeParameters(String valuesToChange){
     lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
     tmpHexCRC = "";
 
+    digitalWrite(ledstat, true);
+    delay(500);
+    digitalWrite(ledstat, false);
+
     delay(800);
 
     //  timer change
@@ -413,6 +406,10 @@ void changeParameters(String valuesToChange){
 
     lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
     tmpHexCRC = "";
+
+    digitalWrite(ledstat, true);
+    delay(500);
+    digitalWrite(ledstat, false);
 
     delay(800);
 
@@ -474,6 +471,10 @@ void changeParameters(String valuesToChange){
     lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
     tmpHexCRC = "";
 
+    digitalWrite(ledstat, true);
+    delay(500);
+    digitalWrite(ledstat, false);
+
     delay(800);
 
     // Change RLI
@@ -521,7 +522,7 @@ void changeParameters(String valuesToChange){
     // Calculate CRC
     crcValue = crc.DNP3(pkgWrite, 0, 11);
 
-    tmpHexCRC = decToHex(crcValue, 4);
+    tmpHexCRC   = decToHex(crcValue, 4);
     lsbCRC         = hexToDec(tmpHexCRC.substring(2));
     msbCRC       = hexToDec(tmpHexCRC.substring(0, 2));
 
@@ -534,16 +535,11 @@ void changeParameters(String valuesToChange){
     lsbCRC, msbCRC, crcValue, address, valueMSB, valueLSB, hack = 0;
     tmpHexCRC = "";
 
-    delay(800);
-
-    gsmSerial.println("AT+CMGS=\"+5548998219908\""); //change ZZ with country code and xxxxxxxxxxx with phone number to sms
-    delay(300);
-    gsmSerial.print("Trocando..."); //text content
-    delay(300);
-    gsmSerial.write(26);
-    delay(300);
-
+    digitalWrite(ledstat, true);
+    delay(500);
     digitalWrite(ledstat, false);
+
+    delay(800);
 }
 
 String getValue(String data, char separator, int index){
@@ -595,10 +591,24 @@ void loop(){
         tempoenvio = 0;
         lersigfox = false;
     }
-    if ( gsmSerial.available() ){
-        receivedMSG();
+    if ( gsmSerial.available() > 0 ){
+        receivedMSG();   
     }
-    if ( (enviaGSM == true) && (lersigfox == false) ){
+
+    if ( recGSM == 1 ) {
+        if ( timeoutGSM > 2 ) {
+            if ( msgGSM[50] == 'R' ){
+                // Remove o numero de quem esta eviando
+                valuesToChange = msgGSM.substring(51);
+                enviaGSM = true;
+            }
+            recGSM=0;
+        }
+    } else {
+        timeoutGSM=0;
+    }
+
+    if ( ( enviaGSM == true ) && ( lersigfox == false ) ){
         digitalWrite(ledstat, true);
         changeParameters(valuesToChange);
         enviaGSM = false;
