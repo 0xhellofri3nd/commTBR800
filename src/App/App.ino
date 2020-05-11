@@ -6,23 +6,15 @@
 
 #define ledstat 4
 
-byte sb;
 byte pkgWrite[13];
-byte pkgRead[400];
-byte basePKG[] = { 0x05, 0x64, 0x0b, 
-                                 0xc4, 0x01, 0x00, 0x01, 
-                                 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 
-                                 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50 };
 
 
-int index, tempopisca, tempoenvio,timeoutGSM, recGSM, hack = 0;
+int index, tempopisca, tempoenvio,timeoutGSM, recGSM, hack, timeoutSF = 0;
 
-String Sigfox,pkgToSend, numHex0, numHex1, numHex2,
-           numHex3, numHex4, numHex5, numHex6, numHex7, numHex8, 
-           numHex9, numHex10, numHex11, var1, var2, var3, valuesToChange, msgGSM = "";
+String Sigfox, pkgRead, valuesToChange, msgGSM = "";
 
 bool initpack = false;
-bool lersigfox, enviaGSM = false;
+bool lersigfox, enviaGSM , lendoSF= false;
 
 Crc16 crc;
 AltSoftSerial sigfoxSerial;
@@ -30,10 +22,11 @@ SoftwareSerial gsmSerial( 11, 10 );
 
 void setup(){
     Serial.begin(9600);
-    MsTimer2::set(1000, requestData); // interruption  600000
+    MsTimer2::set(1000, requestData); // interruption 
     MsTimer2::start();
 
     pinMode(ledstat, OUTPUT);
+
     sigfoxSerial.begin(9600);
     gsmSerial.begin(9600);
 
@@ -56,31 +49,13 @@ void setup(){
     initpack = true;
 }
 
-// Convert data to 16-bit integer
-int convert16bits( char msb, char lsb ){
-    int convertData = ( int(msb * 256) + (int(lsb)) );
-    return convertData;
-}
-
-// Interruption to receive serial data
-void serialEvent(){
-    while ( Serial.available() )    {
-        sb = Serial.read();
-        pkgRead[index] = sb;
-        index++;
-    }
-    if ( index >= 246 ){
-        sendToSigfox();
-        index = 0;
-    }
-}
-
 // Read the Voltage Regulator values
 void requestData(){
     ++tempoenvio;
     ++tempopisca;
     ++timeoutGSM;
-    if ( (tempoenvio == 420) || (initpack == true) ){
+    ++timeoutSF;
+    if ( (tempoenvio == 1200) || (initpack == true) ){
         lersigfox = true;
         initpack = false;
     }
@@ -88,9 +63,146 @@ void requestData(){
 
 // Show received packet parameters
 void sendToSigfox(){
+    String vCharge, iCharge, vSource, iSource, vLine, iLine, currentTap, maxTap, minTap, pkgToSend = "";
+    
+    
+    //vCharge = hexToDec( String(pkgRead[64]) + String(pkgRead[65]) + String(pkgRead[62]) + String(pkgRead[63]) );
+    vCharge = String(pkgRead[64]) + String(pkgRead[65]) + String(pkgRead[62]) + String(pkgRead[63]);
+    switch ( vCharge.length() ){
+        case 1:
+            vCharge = "000" + vCharge;
+            break;
+        case 2:
+            vCharge = "00" + vCharge;
+            break;
+        case 3:
+            vCharge = "0" + vCharge;
+            break;
+    }
+    //iCharge = hexToDec( String(pkgRead[70]) + String(pkgRead[71]) + String(pkgRead[68]) + String(pkgRead[69]) ); // Esta em mA (dividir por 1000 no supervisório)
+    iCharge = String(pkgRead[70]) + String(pkgRead[71]) + String(pkgRead[68]) + String(pkgRead[69]); // Esta em mA (dividir por 1000 no supervisório)
+    switch ( iCharge.length() ){
+        case 1:
+            iCharge = "000" + iCharge;
+            break;
+        case 2:
+            iCharge = "00" + iCharge;
+            break;
+        case 3:
+            iCharge = "0" + iCharge;
+            break;
+    }
+    //vSource = hexToDec( String(pkgRead[76]) + String(pkgRead[77]) + String(pkgRead[74]) + String(pkgRead[75]) );
+    vSource = String(pkgRead[76]) + String(pkgRead[77]) + String(pkgRead[74]) + String(pkgRead[75]);
+    switch ( vSource.length() ){
+        case 1:
+            vSource = "000" + vSource;
+            break;
+        case 2:
+            vSource = "00" + vSource;
+            break;
+        case 3:
+            vSource = "0" + vSource;
+            break;
+    }
+    //iSource = hexToDec( String(pkgRead[82]) + String(pkgRead[83]) + String(pkgRead[80]) + String(pkgRead[81]) );
+    iSource = String(pkgRead[82]) + String(pkgRead[83]) + String(pkgRead[80]) + String(pkgRead[81]);
+    switch ( iSource.length() ){
+        case 1:
+            iSource = "000" + iSource;
+            break;
+        case 2:
+            iSource = "00" + iSource;
+            break;
+        case 3:
+            iSource = "0" + iSource;
+            break;
+    }
+    //vLine = hexToDec( String(pkgRead[92]) + String(pkgRead[93]) + String(pkgRead[86]) + String(pkgRead[87]) ); // Dado real:  67 42 eb 05, o que é 42 eb?
+    vLine = String(pkgRead[92]) + String(pkgRead[93]) + String(pkgRead[86]) + String(pkgRead[87]); // Dado real:  67 42 eb 05, o que é 42 eb?
+    switch ( vLine.length() ){
+        case 1:
+            vLine = "000" + vLine;
+            break;
+        case 2:
+            vLine = "00" + vLine;
+            break;
+        case 3:
+            vLine = "0" + vLine;
+            break;
+    }
+    //iLine = hexToDec( String(pkgRead[98]) + String(pkgRead[99]) + String(pkgRead[96]) + String(pkgRead[97]) ); 
+    iLine = String(pkgRead[98]) + String(pkgRead[99]) + String(pkgRead[96]) + String(pkgRead[97]); 
+    switch ( iLine.length() ){
+        case 1:
+            iLine = "000" + iLine;
+            break;
+        case 2:
+            iLine = "00" + iLine;
+            break;
+        case 3:
+            iLine = "0" + iLine;
+            break;
+    }
+
+    //currentTap = hexToDec( String(pkgRead[230]) + String(pkgRead[231]) + String(pkgRead[228]) + String(pkgRead[229]) ); 
+    currentTap = String(pkgRead[230]) + String(pkgRead[231]) + String(pkgRead[228]) + String(pkgRead[229]);
+        
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "ff") )
+        currentTap = "A01";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fe") )
+        currentTap = "A02";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fd") )
+        currentTap = "A03";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fc") )
+        currentTap = "A04";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fb") )
+        currentTap = "A05";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fa") )
+        currentTap = "A06";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f9") )
+        currentTap = "A07";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f8") )
+        currentTap = "A08";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f7") )
+        currentTap = "A09";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f6") )
+        currentTap = "A10";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f5") )
+        currentTap = "A11";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f4") )
+        currentTap = "A12";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f3") )
+        currentTap = "A13";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f2") )
+        currentTap = "A14";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f1") )
+        currentTap = "A15";
+    if ( (currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f0") )
+        currentTap = "A16";
+    
+    Serial.println(currentTap);
+    
+    //maxTap = hexToDec( String(pkgRead[240]) + String(pkgRead[241]) + String(pkgRead[238]) + String(pkgRead[239]) ); 
+    maxTap = String(pkgRead[240]) + String(pkgRead[241]) + String(pkgRead[238]) + String(pkgRead[239]);
+
+    // pkgToSend = vCharge + iCharge + vSource + iSource + vLine + iLine ;
+    
+    /*
+    Serial.println(vCharge);
+    Serial.println(iCharge);
+    Serial.println(vSource);
+    Serial.println(iSource);
+    Serial.println(vLine);
+    Serial.println(iLine);
+    Serial.println(currentTap); 
+    Serial.println(maxTap);
+    Serial.println(minTap);
+    */
+    //Serial.println(pkgToSend);
+    //Serial.println(sizeof(pkgToSend));
+
     delay(100);
-    convertVariables();
-    Sigfox = "";
     sigfoxSerial.println("AT");
     sigfoxSerial.println("AT$RC");
     Sigfox = "AT$SF=";
@@ -98,107 +210,7 @@ void sendToSigfox(){
     Serial.println("Enviando para nuvem : " + pkgToSend);
     Sigfox += pkgToSend;
     sigfoxSerial.println(Sigfox);
-}
-
-void convertVariables(){
-    numHex0 = String((convert16bits(pkgRead[32], pkgRead[31])), HEX);
-    numHex1 = String((convert16bits(pkgRead[35], pkgRead[34])), HEX);
-    numHex2 = String((convert16bits(pkgRead[38], pkgRead[37])), HEX);
-    numHex3 = String((convert16bits(pkgRead[41], pkgRead[40])), HEX);
-    numHex4 = String((convert16bits(pkgRead[46], pkgRead[43])), HEX);
-    numHex5 = String((convert16bits(pkgRead[49], pkgRead[48])), HEX);
-    numHex6 = String((convert16bits(pkgRead[115], pkgRead[114])), HEX);
-    numHex7 = String((convert16bits(pkgRead[120], pkgRead[119])), HEX);
-    numHex8 = String((convert16bits(pkgRead[140], pkgRead[139])), HEX);
-    numHex9 = "00";
-    numHex10 = "00";
-    numHex11 = "00";
-
-    switch ( numHex0.length() ){
-        case 1:
-            numHex0 = "0" + numHex0;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex1.length() ){
-        case 1:
-            numHex1 = "0" + numHex1;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex2.length() ){
-        case 1:
-            numHex2 = "0" + numHex2;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex3.length() ){
-        case 1:
-            numHex3 = "0" + numHex3;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex4.length() ){
-        case 1:
-            numHex4 = "0" + numHex4;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex5.length() ){
-        case 1:
-            numHex5 = "0" + numHex5;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex6.length() ){
-        case 1:
-            numHex6 = "0" + numHex6;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex7.length() ){
-        case 1:
-            numHex7 = "0" + numHex7;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex8.length() ){
-        case 1:
-            numHex8 = "0" + numHex8;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex9.length() ){
-        case 1:
-            numHex9 = "0" + numHex9;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex10.length() ){
-        case 1:
-            numHex10 = "0" + numHex10;
-            break;
-        case 2:
-            break;
-    }
-    switch ( numHex11.length() ){
-        case 1:
-            numHex11 = "0" + numHex11;
-            break;
-        case 2:
-            break;
-    }
-    pkgToSend = numHex0 + numHex1 + numHex2 + numHex3 + numHex4 + numHex5 + numHex6 + numHex7 + numHex8 + numHex9 + numHex10 + numHex11;
+    pkgToSend, Sigfox = "";
 }
 
 void updateSerial(){
@@ -211,11 +223,11 @@ void updateSerial(){
     }
 }
 
-void receivedMSG(){
+ void receivedMSG(){
     msgGSM = gsmSerial.readString();
     recGSM = 1;
     timeoutGSM = 0;
-}
+ }
 
 void changeParameters(String valuesToChange){
     
@@ -540,6 +552,14 @@ void changeParameters(String valuesToChange){
     digitalWrite(ledstat, false);
 
     delay(800);
+
+    gsmSerial.println("AT+CMGS=\"+5548996137114\"");//change ZZ with country code and xxxxxxxxxxx with phone number to sms
+    delay(300);
+    gsmSerial.print("Trocou..."); //text content
+    delay(300);
+    gsmSerial.write(26);
+
+    enviaGSM = false;
 }
 
 String getValue(String data, char separator, int index){
@@ -583,20 +603,47 @@ String decToHex(long decValue, byte desiredStringLength) {
 }
 
 void loop(){
-
-    if ( (lersigfox == true) && (enviaGSM == false)  ){
-        index = 0;
-        Serial.println("Sending...");
+/*
+    if ( (lersigfox == true) && (enviaGSM == false)  ) {
+        
+        byte basePKG[] = { 0x05, 0x64, 0x0b,0xc4, 0x01, 0x00, 0x01,0x00, 0xc2, 0x2e, 0xc0, 0xc0,0x01, 0x3c, 0x01, 0x06, 0xff, 0x50 };
         Serial.write(basePKG, sizeof(basePKG));
+        
+        index = 0;
         tempoenvio = 0;
         lersigfox = false;
+        lendoSF = true;
+    }    
+    if ( lendoSF == false ) {
+        timeoutSF=0;
     }
-    if ( gsmSerial.available() > 0 ){
-        receivedMSG();   
+*/
+    while ( Serial.available() > 0 ) {
+        //String pkgRead = Serial.readString();
+        pkgRead = Serial.readString();
+        //pkgRead[index] = sb;
+        //index++;        
+        Serial.println(pkgRead.length());      
     }
 
+
+    //if ( timeoutSF == 2 ) {
+        if ( pkgRead.length() >= 495 ){
+            sendToSigfox();
+            pkgRead = "";  
+        }
+        //lendoSF=false;
+        //timeoutSF=0;  
+    //}
+
+
+    if ( gsmSerial.available() > 0 ){
+        receivedMSG();
+    }    
+
+
     if ( recGSM == 1 ) {
-        if ( timeoutGSM > 2 ) {
+        if ( timeoutGSM > 1 ) {
             if ( msgGSM[50] == 'R' ){
                 // Remove o numero de quem esta eviando
                 valuesToChange = msgGSM.substring(51);
@@ -606,12 +653,20 @@ void loop(){
         }
     } else {
         timeoutGSM=0;
-    }
+    }    
 
     if ( ( enviaGSM == true ) && ( lersigfox == false ) ){
-        digitalWrite(ledstat, true);
         changeParameters(valuesToChange);
-        enviaGSM = false;
         valuesToChange = "";
+    }    
+
+
+    if ( tempopisca > 1 ) {
+        digitalWrite( ledstat, true );
     }
+    if ( tempopisca > 2 ) {
+        digitalWrite(ledstat, false);
+        tempopisca = 0;
+    }
+
 }
