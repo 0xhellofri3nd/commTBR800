@@ -1,0 +1,32 @@
+TensaoCarga
+Posicao TAP (15 minutos)
+
+CorrenteCarga
+TensaoFonte
+CorrenteFonte
+Tensao linha
+Corrente linha
+Posição tap máximo
+Posição tap mínimo
+Número de operações (1h)
+
+Alarmes
+90% corrente nominal 
+da carga
+
+tensão da carga (Prodist)
+máxima - 
+mínima - 
+
+Memoria tap Max.
+Memoria tap Min.
+
+- Tensão de Carga
+- Maxima e minima
+- desequilíbrio de fase
+
+- horarios  das 8 as 9h
+- das 17 as 20h e 
+- na madrugada
+
+
