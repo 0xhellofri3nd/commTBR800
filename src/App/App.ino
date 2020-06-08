@@ -2,110 +2,126 @@
 #include <Crc16.h>
 #include <MsTimer2.h>
 #include <AltSoftSerial.h>
-#include <SoftwareSerial.h>
+#include <NeoSWSerial.h>
+#include <avr/wdt.h>
 
-#define ledstat 4
+bool initializing = false, SFStart = false, pkgASending = false, pkgBSending = false, blockpkgA = false, blockpkgB = false,
+     vChargepkg = false, tapMaxpkg = false, tapMinpkg = false, iChargepkg = false, blockpkgF = false,
+     changeGSM = false, lersigfox = false, blockpkgC = false, blockpkgD = false,
+     blockpkgE = false, sendCycle = false;
 
+byte gsmStart = 0, pkgNumSending = 0, pkgCycle = 0, parameterChange = 0;
 byte pkgRead[300];
-
-bool lersigfox = false;
-char sb;
-
-int hack = 0, index = 0,
-      readingTime = 0, timeMessage = 0, 
-      posCut = 0, idtData = 0, timePriorityMessage = 0;
-
 byte pkgWrite[13];
 
-String valuesToChange = "", valueVerficator = "", msgGSM = "";
+int hack = 0, index = 0, timeInitialize = 0, x = 0, readingTime = 0, timeMessage = 0,
+    posCut = 0, idtData = 0, timePriorityMessage = 0, timestatus = 0,
+    alarm = 0, timeSigFox = 0, timeChange = 0;
 
-SoftwareSerial gsmSerial(11, 10);
+String valuesToChange = "", valueVerficator = "", msgGSM = "",
+       dataTapMax = "", horaTapMax = "", dataTapMin = "", horaTapMin = "",
+       pkgToSendA = "", pkgToSendB = "", pkgToSendC = "", pkgToSendD = "", pkgToSendE = "",
+       pkgToSendF = "", pkgToSendG = "";
+
+char sb;
+
+NeoSWSerial gsmSerial( 11, 10 ); 
 AltSoftSerial sigfoxSerial;
 Crc16 crc;
 
-void setup(){
-    pinMode(ledstat, OUTPUT);
+void setup() {
+    wdt_disable();
 
-    Serial.begin(9600);
-    gsmSerial.begin(9600);
-    sigfoxSerial.begin(9600);
+    Serial.begin( 9600 );
+    gsmSerial.begin( 9600 );
+    sigfoxSerial.begin( 9600 );
 
-    MsTimer2::set(1000, requestData); // interruption
+    MsTimer2::set( 1000, timersSettings ); // Define time base
     MsTimer2::start();
+    initializing = true;
 
-    // initialize Sigfox
-    sigfoxSerial.println("AT");
-    delay(100);
-    sigfoxSerial.println("AT$RC");
-    delay(100);
-    sigfoxSerial.println("AT$SF=255255");
-    delay(100);
-
-    // time to initialize GSM
-    delay(5000);
-    gsmSerial.println("AT+CMGF=1"); // Configuring TEXT mode
-    delay(2000);
-    gsmSerial.println("AT+CNMI=2,2,0,0,0"); // Decides how newly arrived SMS messages should be handled
-    delay(2000);
+    wdt_enable(WDTO_8S);  // Initialisation WatchDog Timer for 8 seconds
 }
 
-void requestData(){
-    timePriorityMessage++;
-    timeMessage++;
-    readingTime++;
+/*
+* Function for implementing multiple timers from the same time base
+*/
+void timersSettings() {
+    if ( initializing ) {
+        timeInitialize++;
+    } else {
+        timeInitialize = 0;
 
-    // A cada 3 min (180 s) realiza uma leitura
-    if (readingTime == 180){
-        lersigfox = true;
-        readingTime = 0;
-    }
+        if ( (pkgASending) || (pkgBSending) || (vChargepkg) || (tapMaxpkg) || (tapMinpkg) || (iChargepkg) ) {
+            timeSigFox++;
+        } else {
+            if ( changeGSM == false ) {
+                timePriorityMessage++;
+                timeMessage++;
+                readingTime++;
+                timeSigFox = 0;
+            } else {
+                timeChange++;
+            }
+        }
+        // Every 3 min (180 s) take a reading
+        if ( readingTime == 180 ) {
+            lersigfox = true;
+            readingTime = 0;
+        }
 
-    // A cada 15 min (~900 s) envia uma mensagem do tipo A
-    if (timePriorityMessage == 900){
-        idtData = 1;
-        lersigfox = true;
-        timePriorityMessage = 0;
-    }
+        // Every 15 min (~ 900 s) sends a type A message
+        if ( timePriorityMessage == 900 ) {
+            idtData = 1;
+            lersigfox = true;
+            timePriorityMessage = 0;
+            alarm = 0;
+        }
 
-    // A cada 51 min (~3085 s) envia uma mensagem do tipo B, C e D
-    if (timeMessage == 3085){
-        idtData = 2;
-        lersigfox = true;
-        timeMessage = 0;
+        // Every 3h min (~ 10800 s) send a message of type B, C and D
+        if ( timeMessage == 10800 ) {
+            idtData = 2;
+            lersigfox = true;
+            timeMessage = 0;
+        }
     }
 }
-void sendToSigfox(String pkgToSend){
+
+/*
+* Function for sending data over the Sigfox network
+*       pkgToSend: It must be a String (with a maximum of 12 characters), where the characters A, B, C and D indicate a data update package. 
+*                            The "E" package is intended for alarms
+*       Note: The string must always contain an even number of characters
+*/
+void sendToSigfox( String pkgToSend ) {
     String Sigfox = "";
-    sigfoxSerial.println("AT");
-    delay(100);
-    sigfoxSerial.println("AT$RC");
-    delay(100);
-    Sigfox = "AT$SF=";
-    Sigfox += pkgToSend;
-    sigfoxSerial.println(Sigfox);
-    delay(100);
+    Sigfox = "AT$SF=" + pkgToSend;
+    delay( 100 );
+    sigfoxSerial.println( "AT" );
+    delay( 100 );
+    sigfoxSerial.println( "AT$RC" );
+    delay( 100 );
+    sigfoxSerial.println( Sigfox);
+    delay( 100 );
     Sigfox = "", pkgToSend = "";
 }
 
-// Show received packet parameters
-void dataAnalysis(int idtData){
-    int alarm = 0;
-    String pkgToSendA = "", pkgToSendB = "", pkgToSendC = "", pkgToSendD = "", pkgToSendE = "",
-               vCharge = "", vChargeLSB = "", vChargeMSB = "", iCharge = "", iChargeLSB = "", iChargeMSB = "",
-               vSource = "", vSourceLSB = "", vSourceMSB = "", iSource = "", iSourceLSB = "", iSourceMSB = "",
-               maxTap = "", maxTapLSB = "", maxTapMSB = "", minTap = "", minTapLSB = "", minTapMSB = "",
-               vLine = "", vLineLSB = "", vLineMSB = "", iLine = "", iLineLSB = "", iLineMSB = "",
-               opCounterMult = "", opCounterMultLSB = "", opCounterMultMSB = "",
-               operationsCounter = "", opCounterMSB = "", opCounterLSB = "",
-               currentTap = "", currentTapLSB = "", currentTapMSB = "";
+/*
+*  Function that separates the data read from the TB-R800 control and prepares the packets for sending over the Sigfox network
+*       idtData: It will indicate which packet will be sent, with equal value 1 for packet A, and 2 for packets B, C, D
+*/
+void dataAnalysis( int idtData ) {
+    String vCharge = "", iCharge = "", vSource = "", iSource = "", maxTap = "", minTap = "", vLine = "", iLine = "",
+               opCounterMult = "", operationsCounter = "", currentTap = "", hora = "", minuto = "", dia = "",
+               mes = "", valueLSB = "", valueMSB = "", valueLSB1 = "", valueMSB1 = "";
 
-    vChargeLSB = decToHex(pkgRead[31], 1);
-    vChargeMSB = decToHex(pkgRead[32], 1);
-    vCharge = vChargeMSB + vChargeLSB;
+    valueLSB = decToHex( pkgRead[31], 1 );
+    valueMSB = decToHex( pkgRead[32], 1 );
+    vCharge = valueMSB + valueLSB;
 
-    vCharge = hexToDec(vCharge);
+    vCharge = hexToDec( vCharge );
 
-    switch (vCharge.length()){
+    switch ( vCharge.length() ) {
     case 1:
         vCharge = "000" + vCharge;
         break;
@@ -117,13 +133,23 @@ void dataAnalysis(int idtData){
         break;
     }
 
-    iChargeLSB = decToHex(pkgRead[34], 1);
-    iChargeMSB = decToHex(pkgRead[35], 1);
-    iCharge = iChargeMSB + iChargeLSB;
+    // Charge voltage alarm
+    if ( (vCharge.toInt() < 114)   || (vCharge.toInt() >= 126) ) {
+        alarm++;
+        if ( alarm == 2 ) {
+            pkgToSendE = "E0" + vCharge;
+            vChargepkg = true;
+            blockpkgC = true;
+        }
+    }
+
+    valueLSB = decToHex( pkgRead[34], 1 );
+    valueMSB = decToHex( pkgRead[35], 1 );
+    iCharge = valueMSB + valueLSB;
 
     iCharge = hexToDec(iCharge);
 
-    switch (iCharge.length()){
+    switch ( iCharge.length() ) {
     case 1:
         iCharge = "000" + iCharge;
         break;
@@ -135,13 +161,20 @@ void dataAnalysis(int idtData){
         break;
     }
 
-    vSourceLSB = decToHex(pkgRead[37], 1);
-    vSourceMSB = decToHex(pkgRead[38], 1);
-    vSource = vSourceMSB + vSourceLSB;
+      // Current charge alarm
+    if ( iCharge.toInt() < 0 ) {
+        pkgToSendE = "E1" + iCharge;
+        iChargepkg = true;
+        blockpkgF = true;
+    }
 
-    vSource = hexToDec(vSource);
+    valueLSB = decToHex( pkgRead[37], 1 );
+    valueMSB = decToHex( pkgRead[38], 1 );
+    vSource = valueMSB + valueLSB;
 
-    switch (vSource.length()){
+    vSource = hexToDec( vSource );
+
+    switch ( vSource.length() ) {
     case 1:
         vSource = "000" + vSource;
         break;
@@ -153,13 +186,13 @@ void dataAnalysis(int idtData){
         break;
     }
 
-    iSourceLSB = decToHex(pkgRead[40], 1);
-    iSourceMSB = decToHex(pkgRead[41], 1);
-    iSource = iSourceMSB + iSourceLSB;
+    valueLSB = decToHex( pkgRead[40], 1 );
+    valueMSB = decToHex( pkgRead[41], 1 );
+    iSource = valueMSB + valueLSB;
 
-    iSource = hexToDec(iSource);
+    iSource = hexToDec( iSource );
 
-    switch (iSource.length()){
+    switch ( iSource.length() ) {
     case 1:
         iSource = "000" + iSource;
         break;
@@ -171,14 +204,14 @@ void dataAnalysis(int idtData){
         break;
     }
 
-    // Pula 2 bytes mesmo!
-    vLineLSB = decToHex(pkgRead[43], 1);
-    vLineMSB = decToHex(pkgRead[46], 1);
-    vLine = vLineMSB + vLineLSB;
+    // Pula 2 bytes mesmo?
+    valueLSB = decToHex( pkgRead[43], 1 );
+    valueMSB = decToHex( pkgRead[46], 1 );
+    vLine = valueMSB + valueLSB;
 
-    vLine = hexToDec(vLine); // Dado real:  67 42 eb 05, o que é 42 eb?
+    vLine = hexToDec( vLine ); // Rea data:  67 42 eb 05, what's 42 eb?
 
-    switch (vLine.length()){
+    switch ( vLine.length() ) {
     case 1:
         vLine = "000" + vLine;
         break;
@@ -190,13 +223,13 @@ void dataAnalysis(int idtData){
         break;
     }
 
-    iLineLSB = decToHex(pkgRead[48], 1);
-    iLineMSB = decToHex(pkgRead[49], 1);
-    iLine = iLineMSB + iLineLSB;
+    valueLSB = decToHex( pkgRead[48], 1 );
+    valueMSB = decToHex( pkgRead[49], 1 );
+    iLine = valueMSB + valueLSB;
 
-    iLine = hexToDec(iLine);
+    iLine = hexToDec( iLine );
 
-    switch (iLine.length()){
+    switch ( iLine.length() ) {
     case 1:
         iLine = "000" + iLine;
         break;
@@ -209,25 +242,26 @@ void dataAnalysis(int idtData){
     }
 
     /*
-    Os bytes 60, 61, 62 e 63 também são destinados ao
-    contador de operações (Verificar o que acontecerá aqui!)
-  */
+    * Bytes 60, 61, 62 and 63 are also intended for
+    * operations counter (Check what will happen here!)
+    */
+    valueLSB = decToHex( pkgRead[60], 1 );
+    valueMSB = decToHex( pkgRead[61], 1 );
+    opCounterMult = valueMSB + valueLSB;
+    
+    opCounterMult = hexToDec( opCounterMult );
 
-    opCounterMultLSB = decToHex(pkgRead[60], 1);
-    opCounterMultMSB = decToHex(pkgRead[61], 1);
-    opCounterMult = opCounterMultMSB + opCounterMultLSB;
-    opCounterMult = hexToDec(opCounterMult);
-
-    opCounterLSB = decToHex(pkgRead[65], 1);
-    opCounterMSB = decToHex(pkgRead[66], 1);
-    operationsCounter = opCounterMSB + opCounterLSB;
-    operationsCounter = hexToDec(operationsCounter);
+    valueLSB1 = decToHex( pkgRead[65], 1 );
+    valueMSB1 = decToHex( pkgRead[66], 1 );
+    operationsCounter = valueMSB + valueLSB;
+    ;
+    operationsCounter = hexToDec( operationsCounter );
 
     operationsCounter = opCounterMult + operationsCounter;
 
-    operationsCounter = opCounterMultMSB + opCounterMultLSB + opCounterMSB + opCounterLSB;
+    operationsCounter = valueMSB + valueLSB + valueMSB1 + valueLSB1;
 
-    switch (operationsCounter.length()){
+    switch ( operationsCounter.length() ) {
     case 1:
         operationsCounter = "00000" + operationsCounter;
         break;
@@ -245,142 +279,181 @@ void dataAnalysis(int idtData){
         break;
     }
 
-    currentTapLSB = decToHex(pkgRead[114], 1);
-    currentTapMSB = decToHex(pkgRead[115], 1);
-    currentTap = currentTapMSB + currentTapLSB;
+    valueLSB = decToHex( pkgRead[114], 1 );
+    valueMSB = decToHex( pkgRead[115], 1 );
+    currentTap = valueMSB + valueLSB;
 
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "ff"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "ff" ))
         currentTap = "A01";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fe"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "fe" ))
         currentTap = "A02";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fd"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "fd" ))
         currentTap = "A03";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fc"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "fc" ))
         currentTap = "A04";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fb"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "fb" ))
         currentTap = "A05";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "fa"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "fa" ))
         currentTap = "A06";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f9"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f9" ))
         currentTap = "A07";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f8"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f8" ))
         currentTap = "A08";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f7"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f7" ))
         currentTap = "A09";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f6"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f6" ))
         currentTap = "A10";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f5"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f5" ))
         currentTap = "A11";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f4"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f4" ))
         currentTap = "A12";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f3"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f3" ))
         currentTap = "A13";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f2"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f2" ))
         currentTap = "A14";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f1"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f1" ))
         currentTap = "A15";
-    if ((currentTap.substring(0, 2) == "ff") && (currentTap.substring(2) == "f0"))
+    if (( currentTap.substring(0, 2) == "ff" ) && (currentTap.substring(2) == "f0" ))
         currentTap = "A16";
 
-    if (currentTap.substring(0, 1) == "0"){
-        currentTap = hexToDec(currentTap.substring(1));
-        if (currentTap.length() == 1){
+    if (currentTap.substring(0, 1) == "0" ) {
+        currentTap = hexToDec( currentTap.substring(1) );
+        if ( currentTap.length() == 1 ) {
             currentTap = "B0" + currentTap;
         } else {
             currentTap = "B" + currentTap;
         }
     }
 
-    minTapLSB = decToHex(pkgRead[119], 1);
-    minTapMSB = decToHex(pkgRead[120], 1);
-    minTap = minTapMSB + minTapLSB;
+    valueLSB = decToHex( pkgRead[119], 1 );
+    valueMSB = decToHex( pkgRead[120], 1 );
+    minTap = valueMSB + valueLSB;
 
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "ff"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "ff" ))
         minTap = "A01";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "fe"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "fe" ))
         minTap = "A02";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "fd"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "fd" ))
         minTap = "A03";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "fc"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "fc" ))
         minTap = "A04";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "fb"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "fb" ))
         minTap = "A05";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "fa"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "fa" ))
         minTap = "A06";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f9"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f9" ))
         minTap = "A07";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f8"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f8" ))
         minTap = "A08";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f7"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f7" ))
         minTap = "A09";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f6"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f6" ))
         minTap = "A10";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f5"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f5" ))
         minTap = "A11";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f4"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f4" ))
         minTap = "A12";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f3"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f3" ))
         minTap = "A13";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f2"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f2" ))
         minTap = "A14";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f1"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f1" ))
         minTap = "A15";
-    if ((minTap.substring(0, 2) == "ff") && (minTap.substring(2) == "f0"))
+    if (( minTap.substring(0, 2) == "ff" ) && (minTap.substring(2) == "f0" ))
         minTap = "A16";
 
-    if (minTap.substring(0, 1) == "0"){
+    if ( minTap.substring(0, 1) == "0" ) {
         minTap = hexToDec(minTap.substring(1));
-        if (minTap.length() == 1){
+        if ( minTap.length() == 1 ) {
             minTap = "B0" + minTap;
         } else {
             minTap = "B" + minTap;
         }
     }
 
-    maxTapLSB = decToHex(pkgRead[139], 1);
-    maxTapMSB = decToHex(pkgRead[140], 1);
-    maxTap = maxTapMSB + maxTapLSB;
+    /*   
+    * TAP alarm
+    */
+    hora = pkgRead[125];
+    minuto = pkgRead[122];
+    dia = pkgRead[128];
+    mes = pkgRead[131];
 
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "ff"))
+    if ( (dataTapMin == 0) && (horaTapMin == 0) ) {
+        dataTapMin = dia + mes;
+        horaTapMin = hora + minuto;
+    }
+
+    if ( (dataTapMin != (dia + mes)) || (horaTapMin != (hora + minuto)) ) {
+        dataTapMin = dia + mes;
+        horaTapMin = hora + minuto;
+        pkgToSendG = "FBB" + minTap;
+        tapMinpkg = true;
+        blockpkgE = true;
+    }
+
+    valueLSB = decToHex( pkgRead[139], 1 );
+    valueMSB = decToHex( pkgRead[140], 1 );
+    maxTap = valueMSB + valueLSB;
+
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "ff" ))
         maxTap = "A01";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "fe"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "fe" ))
         maxTap = "A02";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "fd"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "fd" ))
         maxTap = "A03";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "fc"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "fc" ))
         maxTap = "A04";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "fb"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "fb" ))
         maxTap = "A05";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "fa"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "fa" ))
         maxTap = "A06";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f9"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f9" ))
         maxTap = "A07";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f8"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f8" ))
         maxTap = "A08";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f7"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f7" ))
         maxTap = "A09";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f6"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f6" ))
         maxTap = "A10";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f5"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f5" ))
         maxTap = "A11";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f4"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f4" ))
         maxTap = "A12";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f3"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f3" ))
         maxTap = "A13";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f2"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f2" ))
         maxTap = "A14";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f1"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f1" ))
         maxTap = "A15";
-    if ((maxTap.substring(0, 2) == "ff") && (maxTap.substring(2) == "f0"))
+    if (( maxTap.substring(0, 2) == "ff" ) && (maxTap.substring(2) == "f0" ))
         maxTap = "A16";
 
-    if (maxTap.substring(0, 1) == "0"){
-        maxTap = hexToDec(maxTap.substring(1));
-        if (maxTap.length() == 1){
+    if ( maxTap.substring(0, 1) == "0" ) {
+        maxTap = hexToDec( maxTap.substring(1) );
+        if ( maxTap.length() == 1 ) {
             maxTap = "B0" + maxTap;
         } else {
             maxTap = "B" + maxTap;
         }
+    }
+
+    hora = pkgRead[145];
+    minuto = pkgRead[142];
+    dia = pkgRead[148];
+    mes = pkgRead[151];
+
+    if ( (dataTapMax == 0) && (horaTapMax == 0) ) {
+        dataTapMax = dia + mes;
+        horaTapMax = hora + minuto;
+    }
+
+    if ( (dataTapMax != (dia + mes)) || (horaTapMax != (hora + minuto)) ) {
+        dataTapMax = dia + mes;
+        horaTapMax = hora + minuto;
+        pkgToSendF = "FAA" + maxTap;
+        tapMaxpkg = true;
+        blockpkgD = true;
     }
 
     pkgToSendA = "A" + vCharge + iCharge + currentTap;
@@ -388,38 +461,26 @@ void dataAnalysis(int idtData){
     pkgToSendC = "C" + vLine + iLine + minTap;
     pkgToSendD = "D0" + operationsCounter + iSource;
 
-    /*
-      if ( (vCharge.toInt() <= 114) || (vCharge.toInt() >= 126) ) {
-          alarm++;
-          if ( alarm == 2){
-              pkgToSendE = "E0" + vCharge;
-              sendToSigfox(pkgToSendE);
-              delay(21000);
-              alarm = 0;
-          }
-          readingTime = 0;
-      }
-  */
-
-    if (idtData == 1){
-        sendToSigfox(pkgToSendA);
-        delay(21000);
+    if ( idtData == 1 ) {
+        pkgASending = true;
+        blockpkgA = true;
+        timeSigFox = 0;
     }
 
-    if (idtData == 2){
-        sendToSigfox(pkgToSendB);
-        delay(21000); // Minimo intervalo entre menssagens é de 20 segundos
-        sendToSigfox(pkgToSendC);
-        delay(21000); // Minimo intervalo entre menssagens é de 20 segundos
-        sendToSigfox(pkgToSendD);
-        delay(21000);
+    if ( idtData == 2 ) {
+        pkgBSending = true;
+        timeSigFox = 0;
+        pkgNumSending = 0;
     }
 }
 
-unsigned int hexToDec(String hexString){
+/*
+* Function for transforming hexadecimal numbers into decimals
+*/
+unsigned int hexToDec( String hexString ) {
     unsigned int decValue = 0;
     int nextInt;
-    for (int i = 0; i < hexString.length(); i++){
+    for ( int i = 0; i < hexString.length(); i++ ) {
         nextInt = int(hexString.charAt(i));
         if (nextInt >= 48 && nextInt <= 57)
             nextInt = map(nextInt, 48, 57, 0, 9);
@@ -433,20 +494,26 @@ unsigned int hexToDec(String hexString){
     return decValue;
 }
 
-String decToHex(long decValue, byte desiredStringLength){
+/*
+* Function for transforming decimals numbers into hexadecimal
+*/
+String decToHex( long decValue, byte desiredStringLength ) {
     String hexString = String(decValue, HEX);
     while (hexString.length() < desiredStringLength)
         hexString = "0" + hexString;
     return hexString;
 }
 
-String getValue(String data, char separator, int index){
+/* 
+* Function to separate a string using a predetermined separator
+*/
+String getValue( String data, char separator, int index ) {
     int found = 0;
     int strIndex[] = {0, -1};
     int maxIndex = data.length() - 1;
 
-    for (int i = 0; i <= maxIndex && found <= index; i++){
-        if (data.charAt(i) == separator || i == maxIndex){
+    for ( int i = 0; i <= maxIndex && found <= index; i++ ) {
+        if ( data.charAt(i) == separator || i == maxIndex ) {
             found++;
             strIndex[0] = strIndex[1] + 1;
             strIndex[1] = (i == maxIndex) ? i + 1 : i;
@@ -455,412 +522,614 @@ String getValue(String data, char separator, int index){
     return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
 }
 
-void changeParameters(String valuesToChange){
+/*
+*  Function for changing the voltage regulator parameters from the values received through the GSM network         
+*       valuesToChange: It must contain valid values for each parameter, separated by the letter "F"
+*/
+void changeParameters( String valuesToChange ) {
 
     unsigned short crcValue;
     int address = 0, valueMSB = 0, valueLSB = 0, lsbCRC = 0, msbCRC = 0;
 
     byte basePkgToWrite[23] = {5, 100, 16, 196, 1, 0, 1, 0, 143, 95, 192, 192, 5, 41, 2, 23, 1, address, valueMSB, valueLSB, 0};
 
-    String lsbRLV = "", msbRLV = "", lsbRLI = "", msbRLI = "", tempRLV = "", tempRLI = "", strRLV = "", strRLI = "", tmpHexCRC = "";
+    String lsbRLV = "", msbRLV = "", lsbRLI = "", msbRLI = "", tempRLV = "",
+           tempRLI = "", strRLV = "", strRLI = "", tmpHexCRC = "";
 
-    String vRef = getValue(valuesToChange, 'F', 0);
-    String insensitivity = getValue(valuesToChange, 'F', 1);
-    String bloqTapMax = getValue(valuesToChange, 'F', 2);
-    String bloqTapMin = getValue(valuesToChange, 'F', 3);
-    String timer = getValue(valuesToChange, 'F', 4);
-    String RLV = getValue(valuesToChange, 'F', 5); //  relationship TP
-    String RLI = getValue(valuesToChange, 'F', 6); //  relationship TC
+    String vRef = getValue( valuesToChange, 'F', 0 );
+    String insensitivity = getValue( valuesToChange, 'F', 1 );
+    String bloqTapMax = getValue( valuesToChange, 'F', 2 );
+    String bloqTapMin = getValue( valuesToChange, 'F', 3 );
+    String timer = getValue( valuesToChange, 'F', 4 );
+    String RLV = getValue( valuesToChange, 'F', 5 ); //  relationship TP
+    String RLI = getValue( valuesToChange, 'F', 6 ); //  relationship TC
 
-    basePkgToWrite[17] = 1;
-    basePkgToWrite[18] = vRef.toInt();
-    basePkgToWrite[19] = 0;
+    switch ( parameterChange ) {
+    case 0:
+        if ( timeChange == 1 ) {
+            basePkgToWrite[17] = 1;
+            basePkgToWrite[18] = vRef.toInt();
+            basePkgToWrite[19] = 0;
 
-    // separates only the data needed to calculate the CRC
-    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
-        for (int x = hack; x <= 10; x++){
-            pkgWrite[x] = basePkgToWrite[i];
-            hack++;
-            x = 11;
+            // separates only the data needed to calculate the CRC
+            for ( int i = 10; i <= sizeof(basePkgToWrite); i++ ) {
+                for ( int x = hack; x <= 10; x++ ) {
+                    pkgWrite[x] = basePkgToWrite[i];
+                    hack++;
+                    x = 11;
+                }
+            }
+
+            // Calculate CRC
+            crcValue = crc.DNP3(pkgWrite, 0, 11);
+
+            tmpHexCRC = decToHex(crcValue, 4);
+            lsbCRC = hexToDec(tmpHexCRC.substring(2));
+            msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
+
+            // add CRC to basePkgToWrite
+            basePkgToWrite[21] = lsbCRC;
+            basePkgToWrite[22] = msbCRC;
+
+            Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+
+            lsbCRC = 0;
+            msbCRC = 0;
+            crcValue = 0;
+            address = 0;
+            valueMSB = 0;
+            valueLSB = 0;
+            hack = 0;
+            tmpHexCRC = "";
+            parameterChange = 1;
         }
-    }
+        break;
 
-    // Calculate CRC
-    crcValue = crc.DNP3(pkgWrite, 0, 11);
+    case 1:
+        if (timeChange == 2) {
+            // Change insensitivity
+            basePkgToWrite[17] = 2;
+            basePkgToWrite[18] = insensitivity.toInt();
+            basePkgToWrite[19] = 0;
 
-    tmpHexCRC = decToHex(crcValue, 4);
-    lsbCRC = hexToDec(tmpHexCRC.substring(2));
-    msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
+            // separates only the data needed to calculate the CRC
+            for (int i = 10; i <= sizeof(basePkgToWrite); i++) {
+                for (int x = hack; x <= 10; x++) {
+                    pkgWrite[x] = basePkgToWrite[i];
+                    hack++;
+                    x = 11;
+                }
+            }
+            // Calculate CRC
+            crcValue = crc.DNP3(pkgWrite, 0, 11);
 
-    // add CRC to basePkgToWrite
-    basePkgToWrite[21] = lsbCRC;
-    basePkgToWrite[22] = msbCRC;
+            tmpHexCRC = decToHex(crcValue, 4);
+            lsbCRC = hexToDec(tmpHexCRC.substring(2));
+            msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
 
-    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+            // add CRC to basePkgToWrite
+            basePkgToWrite[21] = lsbCRC;
+            basePkgToWrite[22] = msbCRC;
 
-    lsbCRC = 0; msbCRC = 0;  crcValue = 0; address = 0; valueMSB = 0; valueLSB = 0; hack = 0;
-    tmpHexCRC = "";
+            Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
 
-    digitalWrite(ledstat, true);
-    delay(500);
-    digitalWrite(ledstat, false);
-
-    delay(800);
-
-    // Change insensitivity
-    basePkgToWrite[17] = 2;
-    basePkgToWrite[18] = insensitivity.toInt();
-    basePkgToWrite[19] = 0;
-
-    // separates only the data needed to calculate the CRC
-    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
-        for (int x = hack; x <= 10; x++){
-            pkgWrite[x] = basePkgToWrite[i];
-            hack++;
-            x = 11;
+            lsbCRC = 0;
+            msbCRC = 0;
+            crcValue = 0;
+            address = 0;
+            valueMSB = 0;
+            valueLSB = 0;
+            hack = 0;
+            tmpHexCRC = "";
+            parameterChange = 2;
         }
-    }
-    // Calculate CRC
-    crcValue = crc.DNP3(pkgWrite, 0, 11);
+        break;
 
-    tmpHexCRC = decToHex(crcValue, 4);
-    lsbCRC = hexToDec(tmpHexCRC.substring(2));
-    msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
+    case 2:
+        if (timeChange == 3) {
+            // Change bloqTapMax
+            basePkgToWrite[17] = 13;
+            basePkgToWrite[18] = bloqTapMax.toInt();
+            basePkgToWrite[19] = 0;
 
-    // add CRC to basePkgToWrite
-    basePkgToWrite[21] = lsbCRC;
-    basePkgToWrite[22] = msbCRC;
+            // separates only the data needed to calculate the CRC
+            for (int i = 10; i <= sizeof(basePkgToWrite); i++) {
+                for (int x = hack; x <= 10; x++) {
+                    pkgWrite[x] = basePkgToWrite[i];
+                    hack++;
+                    x = 11;
+                }
+            }
 
-    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+            // Calculate CRC
+            crcValue = crc.DNP3(pkgWrite, 0, 11);
 
-    lsbCRC =0; msbCRC =0; crcValue =0; address =0; valueMSB =0; valueLSB =0; hack = 0;
-    tmpHexCRC = "";
+            tmpHexCRC = decToHex(crcValue, 4);
+            lsbCRC = hexToDec(tmpHexCRC.substring(2));
+            msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
 
-    digitalWrite(ledstat, true);
-    delay(500);
-    digitalWrite(ledstat, false);
+            // add CRC to basePkgToWrite
+            basePkgToWrite[21] = lsbCRC;
+            basePkgToWrite[22] = msbCRC;
 
-    delay(800);
+            Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
 
-    // Change bloqTapMax
-    basePkgToWrite[17] = 13;
-    basePkgToWrite[18] = bloqTapMax.toInt();
-    basePkgToWrite[19] = 0;
-
-    // separates only the data needed to calculate the CRC
-    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
-        for (int x = hack; x <= 10; x++){
-            pkgWrite[x] = basePkgToWrite[i];
-            hack++;
-            x = 11;
+            lsbCRC = 0;
+            msbCRC = 0;
+            crcValue = 0;
+            address = 0;
+            valueMSB = 0;
+            valueLSB = 0;
+            hack = 0;
+            tmpHexCRC = "";
+            parameterChange = 3;
         }
-    }
+        break;
 
-    // Calculate CRC
-    crcValue = crc.DNP3(pkgWrite, 0, 11);
+    case 3:
+        if (timeChange == 4) {
+            // Change bloqTapMin
+            basePkgToWrite[17] = 14;
+            basePkgToWrite[18] = bloqTapMin.toInt();
+            basePkgToWrite[19] = 0;
 
-    tmpHexCRC = decToHex(crcValue, 4);
-    lsbCRC = hexToDec(tmpHexCRC.substring(2));
-    msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
+            // separates only the data needed to calculate the CRC
+            for (int i = 10; i <= sizeof(basePkgToWrite); i++) {
+                for (int x = hack; x <= 10; x++) {
+                    pkgWrite[x] = basePkgToWrite[i];
+                    hack++;
+                    x = 11;
+                }
+            }
 
-    // add CRC to basePkgToWrite
-    basePkgToWrite[21] = lsbCRC;
-    basePkgToWrite[22] = msbCRC;
+            // Calculate CRC
+            crcValue = crc.DNP3(pkgWrite, 0, 11);
 
-    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+            tmpHexCRC = decToHex(crcValue, 4);
+            lsbCRC = hexToDec(tmpHexCRC.substring(2));
+            msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
 
-    lsbCRC = 0; msbCRC = 0; crcValue = 0; address = 0; valueMSB = 0; valueLSB = 0; hack = 0;
-    tmpHexCRC = "";
+            // add CRC to basePkgToWrite
+            basePkgToWrite[21] = lsbCRC;
+            basePkgToWrite[22] = msbCRC;
 
-    digitalWrite(ledstat, true);
-    delay(500);
-    digitalWrite(ledstat, false);
+            Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
 
-    delay(800);
-
-    // Change bloqTapMin
-    basePkgToWrite[17] = 14;
-    basePkgToWrite[18] = bloqTapMin.toInt();
-    basePkgToWrite[19] = 0;
-
-    // separates only the data needed to calculate the CRC
-    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
-        for (int x = hack; x <= 10; x++){
-            pkgWrite[x] = basePkgToWrite[i];
-            hack++;
-            x = 11;
+            lsbCRC = 0;
+            msbCRC = 0;
+            crcValue = 0;
+            address = 0;
+            valueMSB = 0;
+            valueLSB = 0;
+            hack = 0;
+            tmpHexCRC = "";
+            parameterChange = 4;
         }
-    }
+        break;
 
-    // Calculate CRC
-    crcValue = crc.DNP3(pkgWrite, 0, 11);
+    case 4:
+        if (timeChange == 5) {
+            //  timer change
+            basePkgToWrite[17] = 3;
+            basePkgToWrite[18] = timer.toInt();
+            basePkgToWrite[19] = 0;
 
-    tmpHexCRC = decToHex(crcValue, 4);
-    lsbCRC = hexToDec(tmpHexCRC.substring(2));
-    msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
+            // separates only the data needed to calculate the CRC
+            for (int i = 10; i <= sizeof(basePkgToWrite); i++) {
+                for (int x = hack; x <= 10; x++) {
+                    pkgWrite[x] = basePkgToWrite[i];
+                    hack++;
+                    x = 11;
+                }
+            }
 
-    // add CRC to basePkgToWrite
-    basePkgToWrite[21] = lsbCRC;
-    basePkgToWrite[22] = msbCRC;
+            // Calculate CRC
+            crcValue = crc.DNP3(pkgWrite, 0, 11);
 
-    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+            tmpHexCRC = decToHex(crcValue, 4);
+            lsbCRC = hexToDec(tmpHexCRC.substring(2));
+            msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
 
-    lsbCRC = 0; msbCRC = 0; crcValue = 0; address = 0; valueMSB = 0; valueLSB = 0; hack = 0;
-    tmpHexCRC = "";
+            // add CRC to basePkgToWrite
+            basePkgToWrite[21] = lsbCRC;
+            basePkgToWrite[22] = msbCRC;
 
-    digitalWrite(ledstat, true);
-    delay(500);
-    digitalWrite(ledstat, false);
+            Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
 
-    delay(800);
-
-    //  timer change
-    basePkgToWrite[17] = 3;
-    basePkgToWrite[18] = timer.toInt();
-    basePkgToWrite[19] = 0;
-
-    // separates only the data needed to calculate the CRC
-    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
-        for (int x = hack; x <= 10; x++){
-            pkgWrite[x] = basePkgToWrite[i];
-            hack++;
-            x = 11;
+            lsbCRC = 0;
+            msbCRC = 0;
+            crcValue = 0;
+            address = 0;
+            valueMSB = 0;
+            valueLSB = 0;
+            hack = 0;
+            tmpHexCRC = "";
+            parameterChange = 5;
         }
-    }
+        break;
 
-    // Calculate CRC
-    crcValue = crc.DNP3(pkgWrite, 0, 11);
+    case 5:
+        if (timeChange == 6) {
+            // Change RLV
+            int intRLV = RLV.toInt();
+            int converted_msbRLV = 0;
+            int converted_lsbRLV = 0;
+            strRLV = "";
 
-    tmpHexCRC = decToHex(crcValue, 4);
-    lsbCRC = hexToDec(tmpHexCRC.substring(2));
-    msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
+            strRLV = String(intRLV, HEX);
 
-    // add CRC to basePkgToWrite
-    basePkgToWrite[21] = lsbCRC;
-    basePkgToWrite[22] = msbCRC;
+            if (strRLV.length() == 4) {
+                msbRLV = strRLV.substring(2);
+                converted_msbRLV = int(hexToDec(msbRLV));
 
-    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+                lsbRLV = strRLV.substring(0, 2);
+                converted_lsbRLV = int(hexToDec(lsbRLV));
+            }
 
-    lsbCRC = 0; msbCRC = 0; crcValue = 0; address = 0; valueMSB = 0; valueLSB = 0; hack = 0;
-    tmpHexCRC = "";
+            if (strRLV.length() == 3) {
+                msbRLV = strRLV.substring(1);
+                converted_msbRLV = int(hexToDec(msbRLV));
 
-    digitalWrite(ledstat, true);
-    delay(500);
-    digitalWrite(ledstat, false);
+                lsbRLV = strRLV.substring(0, 1);
+                converted_lsbRLV = int(hexToDec(lsbRLV));
+            }
 
-    delay(800);
+            if (strRLV.length() == 2) {
+                converted_msbRLV = int(hexToDec(strRLV));
+                converted_lsbRLV = 0;
+            }
 
-    // Change RLV
-    int intRLV = RLV.toInt();
-    int converted_msbRLV = 0;
-    int converted_lsbRLV = 0;
-    strRLV = "";
+            basePkgToWrite[17] = 15;
+            basePkgToWrite[18] = converted_msbRLV;
+            basePkgToWrite[19] = converted_lsbRLV;
 
-    strRLV = String(intRLV, HEX);
+            // separates only the data needed to calculate the CRC
+            for (int i = 10; i <= sizeof(basePkgToWrite); i++) {
+                for (int x = hack; x <= 10; x++) {
+                    pkgWrite[x] = basePkgToWrite[i];
+                    hack++;
+                    x = 11;
+                }
+            }
 
-    if (strRLV.length() == 4){
-        msbRLV = strRLV.substring(2);
-        converted_msbRLV = int(hexToDec(msbRLV));
+            // Calculate CRC
+            crcValue = crc.DNP3(pkgWrite, 0, 11);
 
-        lsbRLV = strRLV.substring(0, 2);
-        converted_lsbRLV = int(hexToDec(lsbRLV));
-    }
+            tmpHexCRC = decToHex(crcValue, 4);
+            lsbCRC = hexToDec(tmpHexCRC.substring(2));
+            msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
 
-    if (strRLV.length() == 3){
-        msbRLV = strRLV.substring(1);
-        converted_msbRLV = int(hexToDec(msbRLV));
+            // add CRC to basePkgToWrite
+            basePkgToWrite[21] = lsbCRC;
+            basePkgToWrite[22] = msbCRC;
 
-        lsbRLV = strRLV.substring(0, 1);
-        converted_lsbRLV = int(hexToDec(lsbRLV));
-    }
+            Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
 
-    if (strRLV.length() == 2){
-        converted_msbRLV = int(hexToDec(strRLV));
-        converted_lsbRLV = 0;
-    }
-
-    basePkgToWrite[17] = 15;
-    basePkgToWrite[18] = converted_msbRLV;
-    basePkgToWrite[19] = converted_lsbRLV;
-
-    // separates only the data needed to calculate the CRC
-    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
-        for (int x = hack; x <= 10; x++){
-            pkgWrite[x] = basePkgToWrite[i];
-            hack++;
-            x = 11;
+            lsbCRC = 0;
+            msbCRC = 0;
+            crcValue = 0;
+            address = 0;
+            valueMSB = 0;
+            valueLSB = 0;
+            hack = 0;
+            tmpHexCRC = "";
+            parameterChange = 6;
         }
-    }
+        break;
 
-    // Calculate CRC
-    crcValue = crc.DNP3(pkgWrite, 0, 11);
+    case 6:
+        if (timeChange == 7) {
+            // Change RLI
+            int intRLI = RLI.toInt();
+            int converted_msbRLI = 0;
+            int converted_lsbRLI = 0;
+            strRLV = "";
 
-    tmpHexCRC = decToHex(crcValue, 4);
-    lsbCRC = hexToDec(tmpHexCRC.substring(2));
-    msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
+            strRLI = String(intRLI, HEX);
 
-    // add CRC to basePkgToWrite
-    basePkgToWrite[21] = lsbCRC;
-    basePkgToWrite[22] = msbCRC;
+            if (strRLI.length() == 4) {
+                msbRLI = strRLI.substring(2);
+                converted_msbRLI = int(hexToDec(msbRLI));
 
-    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
+                lsbRLI = strRLI.substring(0, 2);
+                converted_lsbRLI = int(hexToDec(lsbRLI));
+            }
 
-    lsbCRC = 0; msbCRC = 0; crcValue = 0; address = 0; valueMSB = 0; valueLSB = 0; hack = 0;
-    tmpHexCRC = "";
+            if (strRLI.length() == 3) {
+                msbRLI = strRLI.substring(1);
+                converted_msbRLI = int(hexToDec(msbRLI));
 
-    digitalWrite(ledstat, true);
-    delay(500);
-    digitalWrite(ledstat, false);
+                lsbRLI = strRLI.substring(0, 1);
+                converted_lsbRLI = int(hexToDec(lsbRLI));
+            }
 
-    delay(800);
+            if (strRLI.length() == 2) {
+                converted_msbRLI = int(hexToDec(strRLI));
+                converted_lsbRLI = 0;
+            }
 
-    // Change RLI
-    int intRLI = RLI.toInt();
-    int converted_msbRLI = 0;
-    int converted_lsbRLI = 0;
-    strRLV = "";
+            basePkgToWrite[17] = 16;
+            basePkgToWrite[18] = converted_msbRLI;
+            basePkgToWrite[19] = converted_lsbRLI;
 
-    strRLI = String(intRLI, HEX);
+            // separates only the data needed to calculate the CRC
+            for (int i = 10; i <= sizeof(basePkgToWrite); i++) {
+                for (int x = hack; x <= 10; x++) {
+                    pkgWrite[x] = basePkgToWrite[i];
+                    hack++;
+                    x = 11;
+                }
+            }
 
-    if (strRLI.length() == 4){
-        msbRLI = strRLI.substring(2);
-        converted_msbRLI = int(hexToDec(msbRLI));
+            // Calculate CRC
+            crcValue = crc.DNP3(pkgWrite, 0, 11);
 
-        lsbRLI = strRLI.substring(0, 2);
-        converted_lsbRLI = int(hexToDec(lsbRLI));
-    }
+            tmpHexCRC = decToHex(crcValue, 4);
+            lsbCRC = hexToDec(tmpHexCRC.substring(2));
+            msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
 
-    if (strRLI.length() == 3){
-        msbRLI = strRLI.substring(1);
-        converted_msbRLI = int(hexToDec(msbRLI));
+            // add CRC to basePkgToWrite
+            basePkgToWrite[21] = lsbCRC;
+            basePkgToWrite[22] = msbCRC;
 
-        lsbRLI = strRLI.substring(0, 1);
-        converted_lsbRLI = int(hexToDec(lsbRLI));
-    }
+            Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
 
-    if (strRLI.length() == 2){
-        converted_msbRLI = int(hexToDec(strRLI));
-        converted_lsbRLI = 0;
-    }
-
-    basePkgToWrite[17] = 16;
-    basePkgToWrite[18] = converted_msbRLI;
-    basePkgToWrite[19] = converted_lsbRLI;
-
-    // separates only the data needed to calculate the CRC
-    for (int i = 10; i <= sizeof(basePkgToWrite); i++){
-        for (int x = hack; x <= 10; x++){
-            pkgWrite[x] = basePkgToWrite[i];
-            hack++;
-            x = 11;
+            lsbCRC = 0;
+            msbCRC = 0;
+            crcValue = 0;
+            address = 0;
+            hack = 0;
+            valueMSB = 0;
+            valueLSB = 0;
+            tmpHexCRC = "";
+            parameterChange = 7;
         }
-    }
+        break;
 
-    // Calculate CRC
-    crcValue = crc.DNP3(pkgWrite, 0, 11);
-
-    tmpHexCRC = decToHex(crcValue, 4);
-    lsbCRC = hexToDec(tmpHexCRC.substring(2));
-    msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
-
-    // add CRC to basePkgToWrite
-    basePkgToWrite[21] = lsbCRC;
-    basePkgToWrite[22] = msbCRC;
-
-    Serial.write(basePkgToWrite, sizeof(basePkgToWrite));
-
-    lsbCRC = 0; msbCRC = 0; crcValue = 0; address = 0; hack = 0; valueMSB = 0; valueLSB = 0;
-    tmpHexCRC = "";
-
-    digitalWrite(ledstat, true);
-    delay(500);
-    digitalWrite(ledstat, false);
-
-    delay(800);
-
-    byte clearPkg[25] = {5, 100, 18, 68, 1, 0, 1, 0, 76, 24, 194, 192, 129, 128, 0, 41, 2, 23, 1, 16, converted_msbRLI, converted_lsbRLI, 0};
-    byte clearPkgSend[13] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-    // separates only the data needed to calculate the CRC
-    for (int i = 10; i <= sizeof(clearPkg); i++){
-        for (int x = hack; x <= 12; x++){
-            clearPkgSend[x] = clearPkg[i];
-            hack++;
-            x = 13;
+    case 7:
+        if (timeChange == 8) {
+            Serial.end();
+            gsmSerial.println( "AT+CMGS=\"+5548996137114\"" ); //change ZZ with country code and xxxxxxxxxxx with phone number to sms
+            delay(300);
+            gsmSerial.print("Trocou..." ); //text content
+            delay(300);
+            gsmSerial.write(26);
+            parameterChange = 8;
         }
+        break;
+
+    case 8:
+        if (timeChange == 9) {
+            Serial.begin(9600);
+            timeChange = 0;
+            changeGSM = false;
+            parameterChange = 0;
+        }
+        break;
     }
-
-    // Calculate CRC
-    crcValue = crc.DNP3(clearPkgSend, 0, 13);
-    tmpHexCRC = decToHex(crcValue, 4);
-    lsbCRC = hexToDec(tmpHexCRC.substring(2));
-    msbCRC = hexToDec(tmpHexCRC.substring(0, 2));
-
-    clearPkg[23] = lsbCRC;
-    clearPkg[24] = msbCRC;
-
-    Serial.write(clearPkg, sizeof(clearPkg));
-
-    Serial.end();
-
-    digitalWrite(ledstat, true);
-    delay(500);
-    digitalWrite(ledstat, false);
-
-    delay(800);
-    Serial.begin(9600);
-
-    /*gsmSerial.println("AT+CMGS=\"+5548996137114\"");//change ZZ with country code and xxxxxxxxxxx with phone number to sms
-  delay(300);
-  gsmSerial.print("Trocou..."); //text content
-  delay(300);
-  gsmSerial.write(26);*/
 }
 
-void receivedMSG(){
+/*
+* Function for receiving data over the GSM network and checking whether or not it is a package designed to change parameters
+*/
+void receivedMSG() {
     msgGSM = gsmSerial.readString();
     valueVerficator = msgGSM.substring(51);
-    for (int i = 0; i < valueVerficator.length(); i++){
-        if (valueVerficator[i] == 'E'){
+    for (int i = 0; i < valueVerficator.length(); i++) {
+        if (valueVerficator[i] == 'E') {
             valuesToChange = valueVerficator.substring(0, i);
             posCut = i;
         }
     }
 }
 
-void loop(){
-    if ( (lersigfox == true) && (idtData == 0) ){
-        delay(100);
-        byte basePKG[] = {0x05, 0x64, 0x0b, 0xc4, 0x01, 0x00, 0x01, 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50};
-        Serial.write(basePKG, sizeof(basePKG));
-        lersigfox = false;
+/*
+* Function for initialization and configuration of GSM and Sigfox networks
+*/
+void initSystem() {
+    if ((timeInitialize == 1) && (SFStart == false)) {
+        sigfoxSerial.println( "AT" );
+        delay( 100 );
+        sigfoxSerial.println( "AT$RC" );
+        delay( 100 );
+        sigfoxSerial.println( "AT$SF=255255" );
+        delay( 100 );
+        SFStart = true;
     }
+    if ((timeInitialize == 5) && (gsmStart == 0)) {
+        gsmSerial.println( "AT+CMGF=1" ); // Configuring TEXT mode
+        gsmStart = 1;
+    }
+    if ((timeInitialize == 7) && (gsmStart == 1)) {
+        gsmSerial.println( "AT+CNMI=2,2,0,0,0" ); // Decides how newly arrived SMS messages should be handled
+        gsmStart = 2;
+    }
+    if ((timeInitialize == 9) && (gsmStart == 2)) {
+        initializing = false;
+        gsmStart = 0;
+    }
+}
 
-    if ( (lersigfox == true) && (idtData != 0) ){
-        delay(100);
-        byte basePKG[] = {0x05, 0x64, 0x0b, 0xc4, 0x01, 0x00, 0x01, 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50};
-        Serial.write(basePKG, sizeof(basePKG));
-        lersigfox = false;
-    }
+void loop() {
+    if (initializing == true) {
+        initSystem();
+    } else {
+        if ((lersigfox == true) && (idtData == 0)) {
+            delay( 100 );
+            byte basePKG[] = {0x05, 0x64, 0x0b, 0xc4, 0x01, 0x00, 0x01, 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50};
+            Serial.write(basePKG, sizeof(basePKG));
+            lersigfox = false;
+            index = 0;
+            pkgCycle = 0;
+        }
 
-    while ( Serial.available() > 0 ){
-        sb = Serial.read();
-        pkgRead[index] = sb;
-        index++;
-    }
+        if ((lersigfox == true) && (idtData != 0)) {
+            delay( 100 );
+            byte basePKG[] = {0x05, 0x64, 0x0b, 0xc4, 0x01, 0x00, 0x01, 0x00, 0xc2, 0x2e, 0xc0, 0xc0, 0x01, 0x3c, 0x01, 0x06, 0xff, 0x50};
+            Serial.write(basePKG, sizeof(basePKG));
+            lersigfox = false;
+            index = 0;
+            pkgCycle = 0;
+        }
 
-    if (index >= 247){
-        dataAnalysis(idtData);
-        index = 0;
-        idtData = 0;
-    }
+        while (Serial.available() > 0) {
+            sb = Serial.read();
+            pkgRead[index] = sb;
+            index++;
+        }
 
-    if (gsmSerial.available() > 0){
-        receivedMSG();
-    }
+        if (index >= 247) {
+            dataAnalysis(idtData);
+            index = 0;
+            idtData = 0;
+        }
 
-    if ( (msgGSM[50] == 'R') && (msgGSM[posCut + 51] == 'E') ){
-        changeParameters(valuesToChange);
-        msgGSM = "";
+        switch (pkgCycle) {
+        case 0:
+            if (pkgASending == true) {
+                if ((blockpkgA == true) && (sendCycle == false)) {
+                    sendToSigfox(pkgToSendA);
+                    blockpkgA = false;
+                    timeSigFox = 0;
+                    sendCycle = true;
+                }
+                if (timeSigFox == 21) {
+                    pkgASending = false;
+                    pkgCycle = 1;
+                    sendCycle = false;
+                }
+            } else {
+                pkgCycle = 1;
+            }
+            break;
+
+        case 1:
+            if ((pkgBSending == true) && (sendCycle == false)) {
+                blockpkgB = true;
+                sendCycle = false;
+            } else {
+                pkgCycle = 2;
+            }
+            if (blockpkgB == true) {
+                if (pkgNumSending == 0) {
+                    pkgNumSending = 1;
+                    sendToSigfox(pkgToSendB);
+                    timeSigFox = 0;
+                }
+                if ((timeSigFox == 21) && (pkgNumSending == 1)) {
+                    sendToSigfox(pkgToSendC);
+                    pkgNumSending = 2;
+                    timeSigFox = 0;
+                }
+                if ((timeSigFox == 21) && (pkgNumSending == 2)) {
+                    sendToSigfox(pkgToSendD);
+                    pkgNumSending = 3;
+                    timeSigFox = 0;
+                }
+                if ((timeSigFox == 21) && (pkgNumSending == 3)) {
+                    pkgBSending = false;
+                    sendCycle = false;
+                    blockpkgB = false;
+                    pkgCycle = 2;
+                }
+            }
+            break;
+
+        case 2:
+            if (vChargepkg == true) {
+                if ((blockpkgC == true) && (sendCycle == false)) {
+                    sendToSigfox(pkgToSendE);
+                    blockpkgC = false;
+                    timeSigFox = 0;
+                    sendCycle = true;
+                }
+                if (timeSigFox == 21) {
+                    vChargepkg = false;
+                    pkgCycle = 3;
+                    timeSigFox = 0;
+                    sendCycle = false;
+                }
+            } else {
+                pkgCycle = 3;
+            }
+            break;
+
+        case 3:
+            if (iChargepkg == true) {
+                if ((blockpkgF == true) && (sendCycle == false)) {
+                    sendToSigfox(pkgToSendE);
+                    blockpkgF = false;
+                    timeSigFox = 0;
+                    sendCycle = true;
+                }
+                if (timeSigFox == 21) {
+                    iChargepkg = false;
+                    pkgCycle = 4;
+                    sendCycle = false;
+                }
+            } else {
+                pkgCycle = 4;
+            }
+            break;
+
+        case 4:
+            if (tapMinpkg == true) {
+                if ((blockpkgE == true) && (sendCycle == false)) {
+                    sendToSigfox(pkgToSendG);
+                    blockpkgE = false;
+                    timeSigFox = 0;
+                    sendCycle = true;
+                }
+                if (timeSigFox == 21) {
+                    tapMinpkg = false;
+                    pkgCycle = 5;
+                    sendCycle = false;
+                }
+            } else {
+                pkgCycle = 5;
+            }
+            break;
+
+        case 5:
+            if (tapMaxpkg == true) {
+                if ((blockpkgD == true) && (sendCycle == false)) {
+                    sendToSigfox(pkgToSendF);
+                    blockpkgD = false;
+                    timeSigFox = 0;
+                    sendCycle = true;
+                }
+                if (timeSigFox == 21) {
+                    tapMaxpkg = false;
+                    pkgCycle = 0;
+                    sendCycle = false;
+                }
+            } else {
+                pkgCycle = 0;
+            }
+        }
+        
+        if (gsmSerial.available() > 0) {
+            receivedMSG();
+        }
+
+        if (changeGSM == true){
+            changeParameters(valuesToChange);
+        }
+
+        if ((msgGSM[50] == 'R') && (msgGSM[posCut + 51] == 'E')) {
+            changeGSM = true;
+            parameterChange = 0;
+            timeChange = 0;
+            msgGSM = "";
+        }
+
+        if (msgGSM[50] == 'T') {
+            gsmSerial.println( "AT+CMGS=\"+5548996137114\"" ); //change ZZ with country code and xxxxxxxxxxx with phone number to sms
+            delay(300);
+            gsmSerial.print("Rodando" ); //text content
+            delay(300);
+            gsmSerial.write(26);
+        }
     }
+    wdt_reset();
 }

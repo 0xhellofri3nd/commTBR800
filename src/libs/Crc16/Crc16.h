@@ -158,7 +158,6 @@ uint16_t Crc16::getCrc()
 //---------------------------------------------------
 unsigned int Crc16::fastCrc(uint8_t data[], uint8_t start, uint16_t length, uint8_t reflectIn, uint8_t reflectOut, uint16_t polynomial, uint16_t xorIn, uint16_t xorOut, uint16_t msbMask, uint16_t mask)
 {
-  Serial.println(data[0]);
   uint16_t crc = xorIn;
 
 	int j;

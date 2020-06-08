@@ -1,6 +1,6 @@
 {
-    "programmer": "AVRISP mkII",
+    "programmer": "AVR ISP",
     "board": "arduino:avr:uno",
-    "port": "/dev/ttyACM0",
+    "port": "/dev/ttyUSB0",
     "sketch": "src/App/App.ino"
 }
